@@ -2,6 +2,8 @@
 
 Focused MCP servers for Atlassian products built with Python and `uv`.
 
+This package installs `mcp` and `atlassian-python-api` from PyPI. The sibling `python-sdk` and `atlassian-python-api` folders are treated as local reference material only and are not required for packaging or Docker builds.
+
 ## Scope
 
 This repository exposes multiple small MCP servers instead of one oversized server:

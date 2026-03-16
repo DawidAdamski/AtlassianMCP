@@ -17,12 +17,9 @@ RUN pip install --no-cache-dir uv
 
 COPY pyproject.toml README.md ./
 COPY src ./src
-COPY python-sdk ./python-sdk
-COPY atlassian-python-api ./atlassian-python-api
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 
 RUN chmod +x /app/docker-entrypoint.sh
 RUN uv pip install --system .
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
-
