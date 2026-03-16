@@ -1,0 +1,37 @@
+[project]
+name = "atlassian-mcp"
+version = "0.1.0"
+description = "Focused MCP servers for Atlassian products"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "atlassian-python-api",
+    "mcp",
+    "pydantic>=2.12.0",
+    "pydantic-settings>=2.5.2",
+]
+
+[project.scripts]
+atlassian-mcp-jira = "atlassian_mcp.servers.jira:main"
+atlassian-mcp-jsm = "atlassian_mcp.servers.jsm:main"
+atlassian-mcp-confluence = "atlassian_mcp.servers.confluence:main"
+atlassian-mcp-bitbucket = "atlassian_mcp.servers.bitbucket:main"
+atlassian-mcp-export-docs = "atlassian_mcp.docs:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atlassian_mcp"]
+
+[tool.uv.sources]
+mcp = { path = "python-sdk", editable = true }
+atlassian-python-api = { path = "atlassian-python-api", editable = true }
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
