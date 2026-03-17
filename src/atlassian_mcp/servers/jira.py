@@ -108,11 +108,16 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
         return client.assign_issue(issue_key, assignee)
 
     @mcp.tool()
-    def list_projects(
-        include_archived: Annotated[bool | None, Field(description="Include archived projects when supported.")] = None,
-        expand: Annotated[str | None, Field(description="Optional expand string.")] = None,
-    ) -> dict[str, Any]:
-        return {"values": client.get_all_projects(included_archived=include_archived, expand=expand)}
+    def jira_myself() -> dict[str, Any]:
+        return client.myself()
+
+    @mcp.tool()
+    def jira_server_info() -> dict[str, Any]:
+        return client.get_server_info()
+
+    @mcp.tool()
+    def list_projects() -> dict[str, Any]:
+        return {"values": client.get_all_projects()}
 
     @mcp.tool()
     def list_sprints(
