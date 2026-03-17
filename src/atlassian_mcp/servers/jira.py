@@ -343,11 +343,23 @@ def build_server(settings: JiraSettings) -> Server:
 
         return _text_result(f"Unknown tool: {name}", is_error=True)
 
-    return Server(
-        "atlassian-jira",
-        on_list_tools=handle_list_tools,
-        on_call_tool=handle_call_tool,
-    )
+    try:
+        return Server(
+            "atlassian-jira",
+            on_list_tools=handle_list_tools,
+            on_call_tool=handle_call_tool,
+        )
+    except TypeError:
+        server = Server("atlassian-jira")
+        if hasattr(server, "_add_request_handler"):
+            server._add_request_handler("tools/list", handle_list_tools)
+            server._add_request_handler("tools/call", handle_call_tool)
+        else:
+            request_handlers = getattr(server, "_request_handlers", {})
+            request_handlers["tools/list"] = handle_list_tools
+            request_handlers["tools/call"] = handle_call_tool
+            setattr(server, "_request_handlers", request_handlers)
+        return server
 
 
 async def _run_stdio() -> None:
