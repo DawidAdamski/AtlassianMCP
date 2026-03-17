@@ -3,12 +3,44 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from pydantic import Field
+from requests import HTTPError
 
 from mcp.server.fastmcp import FastMCP
 
 from ..clients import create_jira_client
 from ..server_cli import main_from_factory
 from ..settings import JiraSettings
+
+
+def _safe_call(operation: str, func: Any) -> dict[str, Any]:
+    try:
+        result = func()
+        return {"ok": True, "operation": operation, "data": result}
+    except HTTPError as exc:
+        response = exc.response
+        details: dict[str, Any] = {
+            "ok": False,
+            "operation": operation,
+            "error_type": "http_error",
+            "message": str(exc),
+        }
+        if response is not None:
+            details["status_code"] = response.status_code
+            details["reason"] = response.reason
+            details["url"] = response.url
+            details["request_id"] = response.headers.get("X-AREQUESTID") or response.headers.get("x-arequestid")
+            try:
+                details["response"] = response.json()
+            except Exception:
+                details["response_text"] = response.text
+        return details
+    except Exception as exc:
+        return {
+            "ok": False,
+            "operation": operation,
+            "error_type": type(exc).__name__,
+            "message": str(exc),
+        }
 
 
 def build_server(settings: JiraSettings, *, json_response: bool = False) -> FastMCP:
@@ -27,14 +59,20 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
         expand: Annotated[str | None, Field(description="Comma-separated expand values.")] = None,
     ) -> dict[str, Any]:
         if settings.cloud:
-            return client.enhanced_jql(
-                jql=jql,
-                fields=fields or "*all",
-                nextPageToken=next_page_token,
-                limit=limit,
-                expand=expand,
+            return _safe_call(
+                "search_issues",
+                lambda: client.enhanced_jql(
+                    jql=jql,
+                    fields=fields or "*all",
+                    nextPageToken=next_page_token,
+                    limit=limit,
+                    expand=expand,
+                ),
             )
-        return client.jql(jql=jql, fields=fields or "*all", start=start, limit=limit, expand=expand)
+        return _safe_call(
+            "search_issues",
+            lambda: client.jql(jql=jql, fields=fields or "*all", start=start, limit=limit, expand=expand),
+        )
 
     @mcp.tool()
     def get_issue(
@@ -42,7 +80,7 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
         fields: Annotated[list[str] | None, Field(description="Optional list of fields to return.")] = None,
         expand: Annotated[str | None, Field(description="Optional expand string.")] = None,
     ) -> dict[str, Any]:
-        return client.issue(issue_key, fields=fields or "*all", expand=expand)
+        return _safe_call("get_issue", lambda: client.issue(issue_key, fields=fields or "*all", expand=expand))
 
     @mcp.tool()
     def create_issue(
@@ -61,7 +99,7 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
             payload["description"] = description
         if fields:
             payload.update(fields)
-        return client.create_issue(fields=payload)
+        return _safe_call("create_issue", lambda: client.create_issue(fields=payload))
 
     @mcp.tool()
     def update_issue(
@@ -69,7 +107,10 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
         fields: Annotated[dict[str, Any], Field(description="Fields payload to send to Jira.")],
         notify_users: Annotated[bool, Field(description="Whether Jira should notify impacted users.")] = True,
     ) -> dict[str, Any]:
-        return client.issue_update(issue_key=issue_key, fields=fields, notify_users=notify_users)
+        return _safe_call(
+            "update_issue",
+            lambda: client.issue_update(issue_key=issue_key, fields=fields, notify_users=notify_users),
+        )
 
     @mcp.tool()
     def transition_issue(
@@ -80,22 +121,25 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
         transition_id: Annotated[str | None, Field(description="Explicit transition ID.")] = None,
         comment: Annotated[str | None, Field(description="Optional comment to add after transition.")] = None,
     ) -> dict[str, Any]:
-        if transition_id:
-            result = client.set_issue_status_by_transition_id(issue_key, transition_id)
-        elif transition_name:
-            result = client.set_issue_status_by_transition_name(issue_key, transition_name)
-        else:
-            raise ValueError("Set transition_name or transition_id.")
-        if comment:
-            client.issue_add_comment(issue_key, comment)
-        return {"transition": result, "issue": issue_key}
+        def _run() -> dict[str, Any]:
+            if transition_id:
+                result = client.set_issue_status_by_transition_id(issue_key, transition_id)
+            elif transition_name:
+                result = client.set_issue_status_by_transition_name(issue_key, transition_name)
+            else:
+                raise ValueError("Set transition_name or transition_id.")
+            if comment:
+                client.issue_add_comment(issue_key, comment)
+            return {"transition": result, "issue": issue_key}
+
+        return _safe_call("transition_issue", _run)
 
     @mcp.tool()
     def add_issue_comment(
         issue_key: Annotated[str, Field(description="Issue key or ID to comment on.")],
         body: Annotated[str, Field(description="Comment body text.")],
     ) -> dict[str, Any]:
-        return client.issue_add_comment(issue_key, body)
+        return _safe_call("add_issue_comment", lambda: client.issue_add_comment(issue_key, body))
 
     @mcp.tool()
     def assign_issue(
@@ -105,19 +149,19 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
             Field(description="Account ID for Cloud or username for Server/Data Center. Use null to unassign."),
         ] = None,
     ) -> dict[str, Any]:
-        return client.assign_issue(issue_key, assignee)
+        return _safe_call("assign_issue", lambda: client.assign_issue(issue_key, assignee))
 
     @mcp.tool()
     def jira_myself() -> dict[str, Any]:
-        return client.myself()
+        return _safe_call("jira_myself", client.myself)
 
     @mcp.tool()
     def jira_server_info() -> dict[str, Any]:
-        return client.get_server_info()
+        return _safe_call("jira_server_info", client.get_server_info)
 
     @mcp.tool()
     def list_projects() -> dict[str, Any]:
-        return {"values": client.get_all_projects()}
+        return _safe_call("list_projects", lambda: {"values": client.get_all_projects()})
 
     @mcp.tool()
     def list_sprints(
@@ -128,7 +172,10 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
         start: Annotated[int, Field(description="Pagination start offset.", ge=0)] = 0,
         limit: Annotated[int, Field(description="Maximum number of sprints to return.", ge=1, le=200)] = 50,
     ) -> dict[str, Any]:
-        return client.get_all_sprints_from_board(board_id=board_id, state=state, start=start, limit=limit)
+        return _safe_call(
+            "list_sprints",
+            lambda: client.get_all_sprints_from_board(board_id=board_id, state=state, start=start, limit=limit),
+        )
 
     @mcp.tool()
     def get_sprint_issues(
@@ -136,7 +183,10 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
         start: Annotated[int, Field(description="Pagination start offset.", ge=0)] = 0,
         limit: Annotated[int, Field(description="Maximum number of issues to return.", ge=1, le=200)] = 50,
     ) -> dict[str, Any]:
-        return client.get_sprint_issues(sprint_id=sprint_id, start=start, limit=limit)
+        return _safe_call(
+            "get_sprint_issues",
+            lambda: client.get_sprint_issues(sprint_id=sprint_id, start=start, limit=limit),
+        )
 
     return mcp
 
