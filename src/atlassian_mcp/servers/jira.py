@@ -7,7 +7,7 @@ from typing import Any
 
 import mcp.server.stdio
 from mcp import types
-from mcp.server import Server, ServerRequestContext
+from mcp.server import Server
 from requests import HTTPError, Response
 
 from ..clients import create_jira_client
@@ -190,11 +190,11 @@ def build_server(settings: JiraSettings) -> Server:
     ]
 
     async def handle_list_tools(
-        ctx: ServerRequestContext, params: types.PaginatedRequestParams | None
+        ctx: Any, params: types.PaginatedRequestParams | None
     ) -> types.ListToolsResult:
         return types.ListToolsResult(tools=tools)
 
-    async def handle_call_tool(ctx: ServerRequestContext, params: types.CallToolRequestParams) -> types.CallToolResult:
+    async def handle_call_tool(ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
         arguments = params.arguments or {}
         name = params.name
 
