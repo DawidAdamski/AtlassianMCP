@@ -33,24 +33,18 @@ def run_server(server: Any, args: argparse.Namespace) -> int:
         return 0
 
     if args.transport == "sse":
-        server.run(transport="sse", host=args.host, port=args.port)
+        server.run(transport="sse")
         return 0
 
-    server.run(
-        transport="streamable-http",
-        host=args.host,
-        port=args.port,
-        json_response=args.json_response,
-        stateless_http=args.stateless_http,
-    )
+    server.run(transport="streamable-http")
     return 0
 
 
 def main_from_factory(
     server_name: str,
-    factory: Callable[[], Any],
+    factory: Callable[[argparse.Namespace], Any],
 ) -> int:
     parser = build_arg_parser(server_name)
     args = parser.parse_args()
-    server = factory()
+    server = factory(args)
     return run_server(server, args)

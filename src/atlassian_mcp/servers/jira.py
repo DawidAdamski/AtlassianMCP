@@ -11,9 +11,9 @@ from ..server_cli import main_from_factory
 from ..settings import JiraSettings
 
 
-def build_server(settings: JiraSettings) -> FastMCP:
+def build_server(settings: JiraSettings, *, json_response: bool = False) -> FastMCP:
     client = create_jira_client(settings)
-    mcp = FastMCP("atlassian-jira")
+    mcp = FastMCP("atlassian-jira", json_response=json_response)
 
     @mcp.tool()
     def search_issues(
@@ -137,4 +137,7 @@ def build_server(settings: JiraSettings) -> FastMCP:
 
 
 def main() -> int:
-    return main_from_factory("atlassian-mcp-jira", lambda: build_server(JiraSettings()))
+    return main_from_factory(
+        "atlassian-mcp-jira",
+        lambda args: build_server(JiraSettings(), json_response=args.json_response),
+    )

@@ -11,9 +11,9 @@ from ..server_cli import main_from_factory
 from ..settings import JsmSettings
 
 
-def build_server(settings: JsmSettings) -> FastMCP:
+def build_server(settings: JsmSettings, *, json_response: bool = False) -> FastMCP:
     client = create_jsm_client(settings)
-    mcp = FastMCP("atlassian-jsm")
+    mcp = FastMCP("atlassian-jsm", json_response=json_response)
 
     @mcp.tool()
     def list_service_desks() -> dict[str, Any]:
@@ -102,4 +102,7 @@ def build_server(settings: JsmSettings) -> FastMCP:
 
 
 def main() -> int:
-    return main_from_factory("atlassian-mcp-jsm", lambda: build_server(JsmSettings()))
+    return main_from_factory(
+        "atlassian-mcp-jsm",
+        lambda args: build_server(JsmSettings(), json_response=args.json_response),
+    )

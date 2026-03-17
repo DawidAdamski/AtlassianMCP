@@ -15,9 +15,9 @@ def _storage_body(value: str) -> dict[str, Any]:
     return {"storage": {"value": value, "representation": "storage"}}
 
 
-def build_server(settings: ConfluenceSettings) -> FastMCP:
+def build_server(settings: ConfluenceSettings, *, json_response: bool = False) -> FastMCP:
     client = create_confluence_client(settings)
-    mcp = FastMCP("atlassian-confluence")
+    mcp = FastMCP("atlassian-confluence", json_response=json_response)
 
     @mcp.tool()
     def search_content(
@@ -115,4 +115,7 @@ def build_server(settings: ConfluenceSettings) -> FastMCP:
 
 
 def main() -> int:
-    return main_from_factory("atlassian-mcp-confluence", lambda: build_server(ConfluenceSettings()))
+    return main_from_factory(
+        "atlassian-mcp-confluence",
+        lambda args: build_server(ConfluenceSettings(), json_response=args.json_response),
+    )
