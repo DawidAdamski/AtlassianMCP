@@ -31,7 +31,7 @@ class AtlassianSettings(BaseSettings):
         kwargs: dict[str, Any] = {
             "timeout": self.timeout,
             "verify_ssl": self.verify_ssl,
-            "advanced_mode": True,
+            "advanced_mode": False,
             "backoff_and_retry": True,
             "cloud": self.cloud,
         }

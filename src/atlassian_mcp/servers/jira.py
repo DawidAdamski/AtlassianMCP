@@ -4,6 +4,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 from requests import HTTPError
+from requests import Response
 
 from mcp.server.fastmcp import FastMCP
 
@@ -15,6 +16,16 @@ from ..settings import JiraSettings
 def _safe_call(operation: str, func: Any) -> dict[str, Any]:
     try:
         result = func()
+        if isinstance(result, Response):
+            try:
+                result = result.json()
+            except Exception:
+                result = {
+                    "status_code": result.status_code,
+                    "reason": result.reason,
+                    "text": result.text,
+                    "url": result.url,
+                }
         return {"ok": True, "operation": operation, "data": result}
     except HTTPError as exc:
         response = exc.response
