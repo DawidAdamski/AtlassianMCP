@@ -59,6 +59,27 @@ def build_server(settings: JiraSettings, *, json_response: bool = False) -> Fast
     mcp = FastMCP("atlassian-jira", json_response=json_response)
 
     @mcp.tool()
+    def ping() -> dict[str, Any]:
+        return {"ok": True, "server": "atlassian-jira"}
+
+    @mcp.tool()
+    def jira_config_debug() -> dict[str, Any]:
+        return {
+            "ok": True,
+            "server": "atlassian-jira",
+            "config": {
+                "url": settings.url,
+                "cloud": settings.cloud,
+                "timeout": settings.timeout,
+                "verify_ssl": settings.verify_ssl,
+                "has_username": bool(settings.username),
+                "has_password": settings.password is not None,
+                "has_token": settings.token is not None,
+                "json_response": json_response,
+            },
+        }
+
+    @mcp.tool()
     def search_issues(
         jql: Annotated[str, Field(description="JQL query used to search for issues.")],
         fields: Annotated[list[str] | None, Field(description="Optional list of fields to return.")] = None,
