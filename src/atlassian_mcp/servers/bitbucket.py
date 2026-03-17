@@ -4,18 +4,18 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from ..clients import create_bitbucket_client, create_bitbucket_cloud_client
 from ..server_cli import main_from_factory
 from ..settings import BitbucketSettings
 
 
-def build_server(settings: BitbucketSettings, *, json_response: bool = False) -> FastMCP:
+def build_server(settings: BitbucketSettings) -> MCPServer:
     client = create_bitbucket_client(settings)
     cloud_client = create_bitbucket_cloud_client(settings) if settings.cloud else None
 
-    mcp = FastMCP("atlassian-bitbucket", json_response=json_response)
+    mcp = MCPServer("atlassian-bitbucket")
 
     @mcp.tool()
     def list_repositories(
@@ -189,5 +189,5 @@ def build_server(settings: BitbucketSettings, *, json_response: bool = False) ->
 def main() -> int:
     return main_from_factory(
         "atlassian-mcp-bitbucket",
-        lambda args: build_server(BitbucketSettings(), json_response=args.json_response),
+        lambda args: build_server(BitbucketSettings()),
     )

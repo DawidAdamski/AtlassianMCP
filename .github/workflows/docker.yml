@@ -23,6 +23,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout python-sdk
+        uses: actions/checkout@v4
+        with:
+          repository: modelcontextprotocol/python-sdk
+          path: python-sdk
+
+      - name: Checkout atlassian-python-api
+        uses: actions/checkout@v4
+        with:
+          repository: atlassian-api/atlassian-python-api
+          path: atlassian-python-api
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

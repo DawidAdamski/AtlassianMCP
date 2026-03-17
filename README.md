@@ -2,7 +2,7 @@
 
 Focused MCP servers for Atlassian products built with Python and `uv`.
 
-This package installs `mcp` and `atlassian-python-api` from PyPI. The sibling `python-sdk` and `atlassian-python-api` folders are treated as local reference material only and are not required for packaging or Docker builds.
+This repository is built against the checked-out `python-sdk` and `atlassian-python-api` source trees in this directory. `uv`, Docker, and GitHub Actions are configured to use those same local sources so development and published images run against one consistent SDK combination.
 
 ## Scope
 
@@ -60,8 +60,8 @@ Shared variable names per product:
 
 Authentication rules:
 
-- Use `TOKEN` for Atlassian Cloud whenever possible.
-- Use `USERNAME` + `PASSWORD` for Data Center / Server where needed.
+- For Jira Cloud, prefer `USERNAME` + `PASSWORD`, where `PASSWORD` is your Atlassian API token.
+- Use `TOKEN` only for products and deployments that expect bearer-token authentication.
 - `TOKEN` or `USERNAME` + `PASSWORD` must be set.
 
 Example:
@@ -69,7 +69,7 @@ Example:
 ```powershell
 $env:ATLASSIAN_JIRA_URL="https://your-site.atlassian.net"
 $env:ATLASSIAN_JIRA_USERNAME="you@example.com"
-$env:ATLASSIAN_JIRA_TOKEN="your-api-token"
+$env:ATLASSIAN_JIRA_PASSWORD="your-api-token"
 $env:ATLASSIAN_JIRA_CLOUD="true"
 uv run atlassian-mcp-jira
 ```
@@ -101,7 +101,7 @@ docker run --rm -p 8000:8000 `
   -e MCP_JSON_RESPONSE=true `
   -e ATLASSIAN_JIRA_URL="https://your-site.atlassian.net" `
   -e ATLASSIAN_JIRA_USERNAME="you@example.com" `
-  -e ATLASSIAN_JIRA_TOKEN="your-api-token" `
+  -e ATLASSIAN_JIRA_PASSWORD="your-api-token" `
   -e ATLASSIAN_JIRA_CLOUD=true `
   atlassian-mcp
 ```
@@ -114,3 +114,4 @@ Supported `MCP_SERVER` values:
 - `bitbucket`
 
 The GitHub Actions workflow in `.github/workflows/docker.yml` builds the image on pull requests and pushes it to GHCR on `main` and version tags.
+It also checks out `modelcontextprotocol/python-sdk` and `atlassian-api/atlassian-python-api` into the Docker build context before building.

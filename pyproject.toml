@@ -5,8 +5,8 @@ description = "Focused MCP servers for Atlassian products"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "atlassian-python-api>=1.14.6",
-    "mcp>=1.25.0",
+    "atlassian-python-api",
+    "mcp",
     "pydantic>=2.12.0",
     "pydantic-settings>=2.5.2",
 ]
@@ -31,3 +31,7 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.uv.sources]
+mcp = { path = "python-sdk" }
+atlassian-python-api = { path = "atlassian-python-api" }

@@ -12,14 +12,16 @@ ENV MCP_EXTRA_ARGS=
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir build uv
+RUN pip install --no-cache-dir uv
 
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY python-sdk ./python-sdk
+COPY atlassian-python-api ./atlassian-python-api
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 
 RUN chmod +x /app/docker-entrypoint.sh
-RUN python -m build --wheel
-RUN pip install --no-cache-dir dist/*.whl
+RUN uv pip install --system ./python-sdk ./atlassian-python-api
+RUN uv pip install --system .
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

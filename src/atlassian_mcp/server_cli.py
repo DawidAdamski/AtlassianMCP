@@ -33,10 +33,16 @@ def run_server(server: Any, args: argparse.Namespace) -> int:
         return 0
 
     if args.transport == "sse":
-        server.run(transport="sse")
+        server.run(transport="sse", host=args.host, port=args.port)
         return 0
 
-    server.run(transport="streamable-http")
+    server.run(
+        transport="streamable-http",
+        host=args.host,
+        port=args.port,
+        json_response=args.json_response,
+        stateless_http=args.stateless_http,
+    )
     return 0
 
 

@@ -4,16 +4,16 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from ..clients import create_jsm_client
 from ..server_cli import main_from_factory
 from ..settings import JsmSettings
 
 
-def build_server(settings: JsmSettings, *, json_response: bool = False) -> FastMCP:
+def build_server(settings: JsmSettings) -> MCPServer:
     client = create_jsm_client(settings)
-    mcp = FastMCP("atlassian-jsm", json_response=json_response)
+    mcp = MCPServer("atlassian-jsm")
 
     @mcp.tool()
     def list_service_desks() -> dict[str, Any]:
@@ -104,5 +104,5 @@ def build_server(settings: JsmSettings, *, json_response: bool = False) -> FastM
 def main() -> int:
     return main_from_factory(
         "atlassian-mcp-jsm",
-        lambda args: build_server(JsmSettings(), json_response=args.json_response),
+        lambda args: build_server(JsmSettings()),
     )

@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from ..clients import create_confluence_client
 from ..server_cli import main_from_factory
@@ -15,9 +15,9 @@ def _storage_body(value: str) -> dict[str, Any]:
     return {"storage": {"value": value, "representation": "storage"}}
 
 
-def build_server(settings: ConfluenceSettings, *, json_response: bool = False) -> FastMCP:
+def build_server(settings: ConfluenceSettings) -> MCPServer:
     client = create_confluence_client(settings)
-    mcp = FastMCP("atlassian-confluence", json_response=json_response)
+    mcp = MCPServer("atlassian-confluence")
 
     @mcp.tool()
     def search_content(
@@ -117,5 +117,5 @@ def build_server(settings: ConfluenceSettings, *, json_response: bool = False) -
 def main() -> int:
     return main_from_factory(
         "atlassian-mcp-confluence",
-        lambda args: build_server(ConfluenceSettings(), json_response=args.json_response),
+        lambda args: build_server(ConfluenceSettings()),
     )
