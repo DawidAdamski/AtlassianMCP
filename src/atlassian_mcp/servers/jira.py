@@ -77,7 +77,7 @@ def _tool(
     schema: dict[str, Any] = {"type": "object", "properties": properties or {}}
     if required:
         schema["required"] = required
-    return types.Tool(name=name, description=description, input_schema=schema)
+    return types.Tool(name=name, description=description, inputSchema=schema)
 
 
 def build_server(settings: JiraSettings) -> Server:
