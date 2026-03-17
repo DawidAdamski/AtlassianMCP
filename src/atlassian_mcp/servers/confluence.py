@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 from ..clients import create_confluence_client
 from ..server_cli import main_from_factory
@@ -15,12 +15,9 @@ def _storage_body(value: str) -> dict[str, Any]:
     return {"storage": {"value": value, "representation": "storage"}}
 
 
-def build_server(settings: ConfluenceSettings) -> MCPServer:
+def build_server(settings: ConfluenceSettings) -> FastMCP:
     client = create_confluence_client(settings)
-    mcp = MCPServer(
-        name="atlassian-confluence",
-        instructions="Focused Confluence MCP server for content search and page workflows.",
-    )
+    mcp = FastMCP("atlassian-confluence")
 
     @mcp.tool()
     def search_content(

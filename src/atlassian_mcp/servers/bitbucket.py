@@ -4,21 +4,18 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 from ..clients import create_bitbucket_client, create_bitbucket_cloud_client
 from ..server_cli import main_from_factory
 from ..settings import BitbucketSettings
 
 
-def build_server(settings: BitbucketSettings) -> MCPServer:
+def build_server(settings: BitbucketSettings) -> FastMCP:
     client = create_bitbucket_client(settings)
     cloud_client = create_bitbucket_cloud_client(settings) if settings.cloud else None
 
-    mcp = MCPServer(
-        name="atlassian-bitbucket",
-        instructions="Focused Bitbucket MCP server for repository, branch, pull request, and pipeline workflows.",
-    )
+    mcp = FastMCP("atlassian-bitbucket")
 
     @mcp.tool()
     def list_repositories(

@@ -4,19 +4,16 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 from ..clients import create_jsm_client
 from ..server_cli import main_from_factory
 from ..settings import JsmSettings
 
 
-def build_server(settings: JsmSettings) -> MCPServer:
+def build_server(settings: JsmSettings) -> FastMCP:
     client = create_jsm_client(settings)
-    mcp = MCPServer(
-        name="atlassian-jsm",
-        instructions="Focused Jira Service Management MCP server for requests and queues.",
-    )
+    mcp = FastMCP("atlassian-jsm")
 
     @mcp.tool()
     def list_service_desks() -> dict[str, Any]:

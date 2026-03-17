@@ -4,9 +4,6 @@ import argparse
 from collections.abc import Callable
 from typing import Any
 
-from mcp.server.mcpserver import MCPServer
-
-
 def build_arg_parser(server_name: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=server_name)
     parser.add_argument(
@@ -30,7 +27,7 @@ def build_arg_parser(server_name: str) -> argparse.ArgumentParser:
     return parser
 
 
-def run_server(server: MCPServer[Any], args: argparse.Namespace) -> int:
+def run_server(server: Any, args: argparse.Namespace) -> int:
     if args.transport == "stdio":
         server.run(transport="stdio")
         return 0
@@ -51,7 +48,7 @@ def run_server(server: MCPServer[Any], args: argparse.Namespace) -> int:
 
 def main_from_factory(
     server_name: str,
-    factory: Callable[[], MCPServer[Any]],
+    factory: Callable[[], Any],
 ) -> int:
     parser = build_arg_parser(server_name)
     args = parser.parse_args()

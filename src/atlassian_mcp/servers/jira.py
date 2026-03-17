@@ -4,19 +4,16 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.fastmcp import FastMCP
 
 from ..clients import create_jira_client
 from ..server_cli import main_from_factory
 from ..settings import JiraSettings
 
 
-def build_server(settings: JiraSettings) -> MCPServer:
+def build_server(settings: JiraSettings) -> FastMCP:
     client = create_jira_client(settings)
-    mcp = MCPServer(
-        name="atlassian-jira",
-        instructions="Focused Jira MCP server for issue search and common issue workflows.",
-    )
+    mcp = FastMCP("atlassian-jira")
 
     @mcp.tool()
     def search_issues(
