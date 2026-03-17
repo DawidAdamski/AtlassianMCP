@@ -194,6 +194,21 @@ def build_server(settings: JiraSettings) -> Server:
     ) -> types.ListToolsResult:
         return types.ListToolsResult(tools=tools)
 
+    async def handle_list_prompts(
+        ctx: Any, params: types.PaginatedRequestParams | None
+    ) -> types.ListPromptsResult:
+        return types.ListPromptsResult(prompts=[])
+
+    async def handle_list_resources(
+        ctx: Any, params: types.PaginatedRequestParams | None
+    ) -> types.ListResourcesResult:
+        return types.ListResourcesResult(resources=[])
+
+    async def handle_list_resource_templates(
+        ctx: Any, params: types.PaginatedRequestParams | None
+    ) -> types.ListResourceTemplatesResult:
+        return types.ListResourceTemplatesResult(resourceTemplates=[])
+
     async def handle_call_tool(ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
         arguments = params.arguments or {}
         name = params.name
@@ -348,16 +363,25 @@ def build_server(settings: JiraSettings) -> Server:
             "atlassian-jira",
             on_list_tools=handle_list_tools,
             on_call_tool=handle_call_tool,
+            on_list_prompts=handle_list_prompts,
+            on_list_resources=handle_list_resources,
+            on_list_resource_templates=handle_list_resource_templates,
         )
     except TypeError:
         server = Server("atlassian-jira")
         if hasattr(server, "_add_request_handler"):
             server._add_request_handler("tools/list", handle_list_tools)
             server._add_request_handler("tools/call", handle_call_tool)
+            server._add_request_handler("prompts/list", handle_list_prompts)
+            server._add_request_handler("resources/list", handle_list_resources)
+            server._add_request_handler("resources/templates/list", handle_list_resource_templates)
         else:
             request_handlers = getattr(server, "_request_handlers", {})
             request_handlers["tools/list"] = handle_list_tools
             request_handlers["tools/call"] = handle_call_tool
+            request_handlers["prompts/list"] = handle_list_prompts
+            request_handlers["resources/list"] = handle_list_resources
+            request_handlers["resources/templates/list"] = handle_list_resource_templates
             setattr(server, "_request_handlers", request_handlers)
         return server
 
