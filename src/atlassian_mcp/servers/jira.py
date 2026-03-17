@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+import argparse
+import asyncio
 import json
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import Field
-from requests import HTTPError
-from requests import Response
-
-from mcp.server.fastmcp import FastMCP
+import mcp.server.stdio
+from mcp import types
+from mcp.server import Server, ServerRequestContext
+from requests import HTTPError, Response
 
 from ..clients import create_jira_client
-from ..server_cli import main_from_factory
 from ..settings import JiraSettings
 
 
@@ -18,20 +18,23 @@ def _dump_text(payload: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2, sort_keys=True, default=str)
 
 
+def _normalize_result(result: Any) -> Any:
+    if isinstance(result, Response):
+        try:
+            return result.json()
+        except Exception:
+            return {
+                "status_code": result.status_code,
+                "reason": result.reason,
+                "text": result.text,
+                "url": result.url,
+            }
+    return result
+
+
 def _safe_call(operation: str, func: Any) -> str:
     try:
-        result = func()
-        if isinstance(result, Response):
-            try:
-                result = result.json()
-            except Exception:
-                result = {
-                    "status_code": result.status_code,
-                    "reason": result.reason,
-                    "text": result.text,
-                    "url": result.url,
-                }
-        return _dump_text({"ok": True, "operation": operation, "data": result})
+        return _dump_text({"ok": True, "operation": operation, "data": _normalize_result(func())})
     except HTTPError as exc:
         response = exc.response
         details: dict[str, Any] = {
@@ -51,185 +54,311 @@ def _safe_call(operation: str, func: Any) -> str:
                 details["response_text"] = response.text
         return _dump_text(details)
     except Exception as exc:
-        return _dump_text({
-            "ok": False,
-            "operation": operation,
-            "error_type": type(exc).__name__,
-            "message": str(exc),
-        })
+        return _dump_text(
+            {
+                "ok": False,
+                "operation": operation,
+                "error_type": type(exc).__name__,
+                "message": str(exc),
+            }
+        )
 
 
-def build_server(settings: JiraSettings, *, json_response: bool = False) -> FastMCP:
+def _text_result(text: str, *, is_error: bool = False) -> types.CallToolResult:
+    return types.CallToolResult(content=[types.TextContent(type="text", text=text)], is_error=is_error)
+
+
+def _tool(
+    name: str,
+    description: str,
+    properties: dict[str, Any] | None = None,
+    required: list[str] | None = None,
+) -> types.Tool:
+    schema: dict[str, Any] = {"type": "object", "properties": properties or {}}
+    if required:
+        schema["required"] = required
+    return types.Tool(name=name, description=description, input_schema=schema)
+
+
+def build_server(settings: JiraSettings) -> Server:
     client = create_jira_client(settings)
-    mcp = FastMCP("atlassian-jira", json_response=json_response)
 
-    @mcp.tool()
-    def ping() -> str:
-        return "pong"
-
-    @mcp.tool()
-    def jira_config_debug() -> str:
-        return _dump_text({
-            "ok": True,
-            "server": "atlassian-jira",
-            "config": {
-                "url": settings.url,
-                "cloud": settings.cloud,
-                "timeout": settings.timeout,
-                "verify_ssl": settings.verify_ssl,
-                "has_username": bool(settings.username),
-                "has_password": settings.password is not None,
-                "has_token": settings.token is not None,
-                "json_response": json_response,
+    tools = [
+        _tool("ping", "Return a local connectivity check without calling Jira."),
+        _tool("jira_config_debug", "Return non-secret Jira MCP configuration visible to the running container."),
+        _tool("jira_myself", "Return the currently authenticated Jira user."),
+        _tool("jira_server_info", "Return Jira server information."),
+        _tool("list_projects", "List visible Jira projects."),
+        _tool(
+            "get_issue",
+            "Get a Jira issue by key or id.",
+            {
+                "issue_key": {"type": "string", "description": "Issue key or ID, for example PROJ-123."},
+                "fields": {"type": "array", "items": {"type": "string"}, "description": "Optional fields to return."},
+                "expand": {"type": "string", "description": "Optional expand string."},
             },
-        })
-
-    @mcp.tool()
-    def search_issues(
-        jql: Annotated[str, Field(description="JQL query used to search for issues.")],
-        fields: Annotated[list[str] | None, Field(description="Optional list of fields to return.")] = None,
-        limit: Annotated[int | None, Field(description="Maximum number of results to return.", ge=1, le=200)] = 50,
-        start: Annotated[int, Field(description="Pagination start offset for Jira Server/Data Center.", ge=0)] = 0,
-        next_page_token: Annotated[
-            str | None, Field(description="Pagination token for Jira Cloud enhanced JQL.")
-        ] = None,
-        expand: Annotated[str | None, Field(description="Comma-separated expand values.")] = None,
-    ) -> str:
-        if settings.cloud:
-            return _safe_call(
-                "search_issues",
-                lambda: client.enhanced_jql(
-                    jql=jql,
-                    fields=fields or "*all",
-                    nextPageToken=next_page_token,
-                    limit=limit,
-                    expand=expand,
-                ),
-            )
-        return _safe_call(
+            ["issue_key"],
+        ),
+        _tool(
             "search_issues",
-            lambda: client.jql(jql=jql, fields=fields or "*all", start=start, limit=limit, expand=expand),
-        )
-
-    @mcp.tool()
-    def get_issue(
-        issue_key: Annotated[str, Field(description="Issue key or ID, for example PROJ-123.")],
-        fields: Annotated[list[str] | None, Field(description="Optional list of fields to return.")] = None,
-        expand: Annotated[str | None, Field(description="Optional expand string.")] = None,
-    ) -> str:
-        return _safe_call("get_issue", lambda: client.issue(issue_key, fields=fields or "*all", expand=expand))
-
-    @mcp.tool()
-    def create_issue(
-        project_key: Annotated[str, Field(description="Project key where the issue should be created.")],
-        issue_type: Annotated[str, Field(description="Issue type name, for example Story or Task.")],
-        summary: Annotated[str, Field(description="Issue summary.")],
-        description: Annotated[str | None, Field(description="Optional issue description.")] = None,
-        fields: Annotated[dict[str, Any] | None, Field(description="Additional Jira fields to merge into the payload.")] = None,
-    ) -> str:
-        payload: dict[str, Any] = {
-            "project": {"key": project_key},
-            "issuetype": {"name": issue_type},
-            "summary": summary,
-        }
-        if description:
-            payload["description"] = description
-        if fields:
-            payload.update(fields)
-        return _safe_call("create_issue", lambda: client.create_issue(fields=payload))
-
-    @mcp.tool()
-    def update_issue(
-        issue_key: Annotated[str, Field(description="Issue key or ID to update.")],
-        fields: Annotated[dict[str, Any], Field(description="Fields payload to send to Jira.")],
-        notify_users: Annotated[bool, Field(description="Whether Jira should notify impacted users.")] = True,
-    ) -> str:
-        return _safe_call(
+            "Search Jira issues using JQL.",
+            {
+                "jql": {"type": "string", "description": "JQL query."},
+                "fields": {"type": "array", "items": {"type": "string"}, "description": "Optional fields to return."},
+                "limit": {"type": "integer", "description": "Maximum results to return."},
+                "start": {"type": "integer", "description": "Pagination start offset."},
+                "next_page_token": {"type": "string", "description": "Pagination token for Jira Cloud."},
+                "expand": {"type": "string", "description": "Optional expand string."},
+            },
+            ["jql"],
+        ),
+        _tool(
+            "add_issue_comment",
+            "Add a comment to a Jira issue.",
+            {
+                "issue_key": {"type": "string", "description": "Issue key or ID."},
+                "body": {"type": "string", "description": "Comment body text."},
+            },
+            ["issue_key", "body"],
+        ),
+        _tool(
+            "assign_issue",
+            "Assign a Jira issue.",
+            {
+                "issue_key": {"type": "string", "description": "Issue key or ID."},
+                "assignee": {
+                    "type": "string",
+                    "description": "Account ID for Cloud or username for Server/Data Center.",
+                },
+            },
+            ["issue_key"],
+        ),
+        _tool(
+            "create_issue",
+            "Create a Jira issue.",
+            {
+                "project_key": {"type": "string", "description": "Project key."},
+                "issue_type": {"type": "string", "description": "Issue type name."},
+                "summary": {"type": "string", "description": "Issue summary."},
+                "description": {"type": "string", "description": "Optional issue description."},
+                "fields": {"type": "object", "description": "Additional Jira fields."},
+            },
+            ["project_key", "issue_type", "summary"],
+        ),
+        _tool(
             "update_issue",
-            lambda: client.issue_update(issue_key=issue_key, fields=fields, notify_users=notify_users),
-        )
-
-    @mcp.tool()
-    def transition_issue(
-        issue_key: Annotated[str, Field(description="Issue key or ID to transition.")],
-        transition_name: Annotated[
-            str | None, Field(description="Human-readable transition name, for example Done.")
-        ] = None,
-        transition_id: Annotated[str | None, Field(description="Explicit transition ID.")] = None,
-        comment: Annotated[str | None, Field(description="Optional comment to add after transition.")] = None,
-    ) -> str:
-        def _run() -> dict[str, Any]:
-            if transition_id:
-                result = client.set_issue_status_by_transition_id(issue_key, transition_id)
-            elif transition_name:
-                result = client.set_issue_status_by_transition_name(issue_key, transition_name)
-            else:
-                raise ValueError("Set transition_name or transition_id.")
-            if comment:
-                client.issue_add_comment(issue_key, comment)
-            return {"transition": result, "issue": issue_key}
-
-        return _safe_call("transition_issue", _run)
-
-    @mcp.tool()
-    def add_issue_comment(
-        issue_key: Annotated[str, Field(description="Issue key or ID to comment on.")],
-        body: Annotated[str, Field(description="Comment body text.")],
-    ) -> str:
-        return _safe_call("add_issue_comment", lambda: client.issue_add_comment(issue_key, body))
-
-    @mcp.tool()
-    def assign_issue(
-        issue_key: Annotated[str, Field(description="Issue key or ID to assign.")],
-        assignee: Annotated[
-            str | None,
-            Field(description="Account ID for Cloud or username for Server/Data Center. Use null to unassign."),
-        ] = None,
-    ) -> str:
-        return _safe_call("assign_issue", lambda: client.assign_issue(issue_key, assignee))
-
-    @mcp.tool()
-    def jira_myself() -> str:
-        return _safe_call("jira_myself", client.myself)
-
-    @mcp.tool()
-    def jira_server_info() -> str:
-        return _safe_call("jira_server_info", client.get_server_info)
-
-    @mcp.tool()
-    def list_projects() -> str:
-        return _safe_call("list_projects", lambda: {"values": client.get_all_projects()})
-
-    @mcp.tool()
-    def list_sprints(
-        board_id: Annotated[int, Field(description="Agile board ID.")],
-        state: Annotated[
-            str | None, Field(description="Optional sprint state filter, e.g. active,future,closed.")
-        ] = None,
-        start: Annotated[int, Field(description="Pagination start offset.", ge=0)] = 0,
-        limit: Annotated[int, Field(description="Maximum number of sprints to return.", ge=1, le=200)] = 50,
-    ) -> str:
-        return _safe_call(
+            "Update a Jira issue.",
+            {
+                "issue_key": {"type": "string", "description": "Issue key or ID."},
+                "fields": {"type": "object", "description": "Fields payload to send to Jira."},
+                "notify_users": {"type": "boolean", "description": "Whether Jira should notify impacted users."},
+            },
+            ["issue_key", "fields"],
+        ),
+        _tool(
+            "transition_issue",
+            "Transition a Jira issue.",
+            {
+                "issue_key": {"type": "string", "description": "Issue key or ID."},
+                "transition_name": {"type": "string", "description": "Human-readable transition name."},
+                "transition_id": {"type": "string", "description": "Explicit transition ID."},
+                "comment": {"type": "string", "description": "Optional comment to add after transition."},
+            },
+            ["issue_key"],
+        ),
+        _tool(
             "list_sprints",
-            lambda: client.get_all_sprints_from_board(board_id=board_id, state=state, start=start, limit=limit),
-        )
-
-    @mcp.tool()
-    def get_sprint_issues(
-        sprint_id: Annotated[int, Field(description="Sprint ID.")],
-        start: Annotated[int, Field(description="Pagination start offset.", ge=0)] = 0,
-        limit: Annotated[int, Field(description="Maximum number of issues to return.", ge=1, le=200)] = 50,
-    ) -> str:
-        return _safe_call(
+            "List sprints for an agile board.",
+            {
+                "board_id": {"type": "integer", "description": "Agile board ID."},
+                "state": {"type": "string", "description": "Optional sprint state filter."},
+                "start": {"type": "integer", "description": "Pagination start offset."},
+                "limit": {"type": "integer", "description": "Maximum number of sprints to return."},
+            },
+            ["board_id"],
+        ),
+        _tool(
             "get_sprint_issues",
-            lambda: client.get_sprint_issues(sprint_id=sprint_id, start=start, limit=limit),
-        )
+            "List issues in a sprint.",
+            {
+                "sprint_id": {"type": "integer", "description": "Sprint ID."},
+                "start": {"type": "integer", "description": "Pagination start offset."},
+                "limit": {"type": "integer", "description": "Maximum number of issues to return."},
+            },
+            ["sprint_id"],
+        ),
+    ]
 
-    return mcp
+    async def handle_list_tools(
+        ctx: ServerRequestContext, params: types.PaginatedRequestParams | None
+    ) -> types.ListToolsResult:
+        return types.ListToolsResult(tools=tools)
+
+    async def handle_call_tool(ctx: ServerRequestContext, params: types.CallToolRequestParams) -> types.CallToolResult:
+        arguments = params.arguments or {}
+        name = params.name
+
+        if name == "ping":
+            return _text_result("pong")
+
+        if name == "jira_config_debug":
+            return _text_result(
+                _dump_text(
+                    {
+                        "ok": True,
+                        "server": "atlassian-jira",
+                        "config": {
+                            "url": settings.url,
+                            "cloud": settings.cloud,
+                            "timeout": settings.timeout,
+                            "verify_ssl": settings.verify_ssl,
+                            "has_username": bool(settings.username),
+                            "has_password": settings.password is not None,
+                            "has_token": settings.token is not None,
+                        },
+                    }
+                )
+            )
+
+        if name == "jira_myself":
+            return _text_result(_safe_call("jira_myself", client.myself))
+
+        if name == "jira_server_info":
+            return _text_result(_safe_call("jira_server_info", client.get_server_info))
+
+        if name == "list_projects":
+            return _text_result(_safe_call("list_projects", lambda: {"values": client.get_all_projects()}))
+
+        if name == "get_issue":
+            return _text_result(
+                _safe_call(
+                    "get_issue",
+                    lambda: client.issue(
+                        arguments["issue_key"],
+                        fields=arguments.get("fields") or "*all",
+                        expand=arguments.get("expand"),
+                    ),
+                )
+            )
+
+        if name == "search_issues":
+            if settings.cloud:
+                return _text_result(
+                    _safe_call(
+                        "search_issues",
+                        lambda: client.enhanced_jql(
+                            jql=arguments["jql"],
+                            fields=arguments.get("fields") or "*all",
+                            nextPageToken=arguments.get("next_page_token"),
+                            limit=arguments.get("limit", 50),
+                            expand=arguments.get("expand"),
+                        ),
+                    )
+                )
+            return _text_result(
+                _safe_call(
+                    "search_issues",
+                    lambda: client.jql(
+                        jql=arguments["jql"],
+                        fields=arguments.get("fields") or "*all",
+                        start=arguments.get("start", 0),
+                        limit=arguments.get("limit", 50),
+                        expand=arguments.get("expand"),
+                    ),
+                )
+            )
+
+        if name == "add_issue_comment":
+            return _text_result(
+                _safe_call("add_issue_comment", lambda: client.issue_add_comment(arguments["issue_key"], arguments["body"]))
+            )
+
+        if name == "assign_issue":
+            return _text_result(
+                _safe_call("assign_issue", lambda: client.assign_issue(arguments["issue_key"], arguments.get("assignee")))
+            )
+
+        if name == "create_issue":
+            payload: dict[str, Any] = {
+                "project": {"key": arguments["project_key"]},
+                "issuetype": {"name": arguments["issue_type"]},
+                "summary": arguments["summary"],
+            }
+            if arguments.get("description"):
+                payload["description"] = arguments["description"]
+            if arguments.get("fields"):
+                payload.update(arguments["fields"])
+            return _text_result(_safe_call("create_issue", lambda: client.create_issue(fields=payload)))
+
+        if name == "update_issue":
+            return _text_result(
+                _safe_call(
+                    "update_issue",
+                    lambda: client.issue_update(
+                        issue_key=arguments["issue_key"],
+                        fields=arguments["fields"],
+                        notify_users=arguments.get("notify_users", True),
+                    ),
+                )
+            )
+
+        if name == "transition_issue":
+            def _transition() -> dict[str, Any]:
+                if arguments.get("transition_id"):
+                    result = client.set_issue_status_by_transition_id(arguments["issue_key"], arguments["transition_id"])
+                elif arguments.get("transition_name"):
+                    result = client.set_issue_status_by_transition_name(arguments["issue_key"], arguments["transition_name"])
+                else:
+                    raise ValueError("Set transition_name or transition_id.")
+                if arguments.get("comment"):
+                    client.issue_add_comment(arguments["issue_key"], arguments["comment"])
+                return {"transition": result, "issue": arguments["issue_key"]}
+
+            return _text_result(_safe_call("transition_issue", _transition))
+
+        if name == "list_sprints":
+            return _text_result(
+                _safe_call(
+                    "list_sprints",
+                    lambda: client.get_all_sprints_from_board(
+                        board_id=arguments["board_id"],
+                        state=arguments.get("state"),
+                        start=arguments.get("start", 0),
+                        limit=arguments.get("limit", 50),
+                    ),
+                )
+            )
+
+        if name == "get_sprint_issues":
+            return _text_result(
+                _safe_call(
+                    "get_sprint_issues",
+                    lambda: client.get_sprint_issues(
+                        sprint_id=arguments["sprint_id"],
+                        start=arguments.get("start", 0),
+                        limit=arguments.get("limit", 50),
+                    ),
+                )
+            )
+
+        return _text_result(f"Unknown tool: {name}", is_error=True)
+
+    return Server(
+        "atlassian-jira",
+        on_list_tools=handle_list_tools,
+        on_call_tool=handle_call_tool,
+    )
+
+
+async def _run_stdio() -> None:
+    server = build_server(JiraSettings())
+    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 def main() -> int:
-    return main_from_factory(
-        "atlassian-mcp-jira",
-        lambda args: build_server(JiraSettings(), json_response=args.json_response),
-    )
+    parser = argparse.ArgumentParser(prog="atlassian-mcp-jira")
+    parser.add_argument("--transport", choices=["stdio"], default="stdio")
+    parser.parse_args()
+    asyncio.run(_run_stdio())
+    return 0
